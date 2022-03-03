@@ -17,7 +17,7 @@ PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
-RETRY_TIME = 600
+RETRY_TIME = 60 * 10
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
@@ -36,7 +36,6 @@ logging.basicConfig(
     filemode='w',
 )
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 handler = RotatingFileHandler(
     'my_logger.log',
     maxBytes=50000000,
@@ -49,14 +48,11 @@ def send_message(bot, message):
     """Отправка сообщения в телеграм."""
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
-        logger.info(
-            f'Message sent to Telegram: {message}'
-        )
-        return message
     except telegram.TelegramError as telegram_error:
         logger.error(
-            f'Message not sent to Telegram: {telegram_error}'
-        )
+            f'Message not sent to Telegram: {telegram_error}')
+    logger.info(
+        f'Message sent to Telegram: {message}')
 
 
 def get_api_answer(current_timestamp):
@@ -69,17 +65,17 @@ def get_api_answer(current_timestamp):
             headers=HEADERS,
             params=params
         )
-        if response.status_code != HTTPStatus.OK:
-            check_message = (
-                f'Ссылка {ENDPOINT} недоступна'
-                f'Код ответа API: {response.status_code}'
-            )
-            logger.error(check_message)
-            raise Exception(check_message)
-        return response.json()
     except requests.RequestException as exception:
         raise ConnectionError(f'Ошибка сервера. {exception},'
                               f'URL{ENDPOINT}, HEADERS, params, TIMEOUT')
+    if response.status_code != HTTPStatus.OK:
+        check_message = (
+            f'Ссылка {ENDPOINT} недоступна'
+            f'Код ответа API: {response.status_code}'
+        )
+        logger.error(check_message)
+        raise Exception(check_message)
+    return response.json()
 
 
 def check_response(response):
@@ -142,28 +138,24 @@ def main():
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
 
-    ...
-
     while True:
+        response = get_api_answer(current_timestamp)
         try:
-            response = get_api_answer(current_timestamp)
             homework = check_response(response)
-            if homework:
-                send_message(bot, parse_status(homework[0]))
-
-            current_timestamp = response.get(
-                'current_date',
-                current_timestamp
-            )
-            time.sleep(RETRY_TIME)
 
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.error(message)
             send_message(bot, message)
-            time.sleep(RETRY_TIME)
-        else:
-            ...
+
+        if homework:
+            send_message(bot, parse_status(homework[0]))
+
+        current_timestamp = response.get(
+            'current_date',
+            current_timestamp
+        )
+        time.sleep(RETRY_TIME)
 
 
 if __name__ == '__main__':
